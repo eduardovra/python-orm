@@ -121,7 +121,18 @@ def sessionmaker(bind=None):
                         values.append(value)
                         placeholders.append('?')
                 sql = f"INSERT INTO {table} ({', '.join(fields)}) VALUES ({', '.join(placeholders)})"
-                self.engine.execute(sql, values)
+                cursor = self.engine.execute(sql, values)
+
+                # Assign primary key if it exists
+                pk_name = None
+                for attr, value in obj.__class__.__dict__.items():
+                    if isinstance(value, Column) and value.primary_key:
+                        pk_name = attr
+                        break
+                if pk_name is not None:
+                    pk_value = cursor.lastrowid
+                    setattr(obj, pk_name, pk_value)
+
                 self.new.remove(obj)
             # Update dirty objects
             for obj in list(self.dirty):
@@ -180,9 +191,9 @@ def sessionmaker(bind=None):
     class Query:
         def __init__(self, model, session):
             self.model = model
+            self.session = session
             self._filter = {}
             self._filter_expr = None
-            self.session = session
 
         def filter_by(self, **kwargs):
             self._filter = kwargs
@@ -287,6 +298,10 @@ user1 = User(name='Alice', age=30)
 user2 = User(name='Bob', age=25)
 session.add_all([user1, user2])
 session.commit()
+
+# Check PK was assigned to instances
+assert user1.id, "Primary key should be assigned to user1"
+assert user2.id, "Primary key should be assigned to user2"
 
 # Query all users
 users = session.query(User).all()
