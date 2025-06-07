@@ -76,10 +76,95 @@ def declarative_base():
 def sessionmaker(bind=None):
     # This function would normally return a session class bound to the engine
 
+    class Session:
+        engine = bind
+
+        def __init__(self):
+            self.new = set()
+            self.dirty = set()
+            self.deleted = set()
+
+        def add(self, obj):
+            self.new.add(obj)
+
+        def add_all(self, objs):
+            for obj in objs:
+                self.add(obj)
+
+        def flush(self):
+            # Insert new objects
+            for obj in list(self.new):
+                table = obj.__tablename__
+                fields = []
+                values = []
+                placeholders = []
+                for attr, value in obj.__dict__.items():
+                    if not attr.startswith('_'):
+                        fields.append(attr)
+                        values.append(value)
+                        placeholders.append('?')
+                sql = f"INSERT INTO {table} ({', '.join(fields)}) VALUES ({', '.join(placeholders)})"
+                self.engine.execute(sql, values)
+                self.new.remove(obj)
+            # Update dirty objects
+            for obj in list(self.dirty):
+                table = obj.__tablename__
+                pk_name = None
+                for attr, value in obj.__class__.__dict__.items():
+                    if isinstance(value, Column) and value.primary_key:
+                        pk_name = attr
+                        break
+                if pk_name is None:
+                    continue
+                pk_value = getattr(obj, pk_name)
+                fields = []
+                values = []
+                for attr, value in obj.__dict__.items():
+                    if not attr.startswith('_') and attr != pk_name:
+                        fields.append(f"{attr}=?")
+                        values.append(value)
+                sql = f"UPDATE {table} SET {', '.join(fields)} WHERE {pk_name}=?"
+                values.append(pk_value)
+                self.engine.execute(sql, values)
+                self.dirty.remove(obj)
+            # Delete deleted objects
+            for obj in list(self.deleted):
+                table = obj.__tablename__
+                pk_name = None
+                for attr, value in obj.__class__.__dict__.items():
+                    if isinstance(value, Column) and value.primary_key:
+                        pk_name = attr
+                        break
+                if pk_name is None:
+                    continue
+                pk_value = getattr(obj, pk_name)
+                sql = f"DELETE FROM {table} WHERE {pk_name}=?"
+                self.engine.execute(sql, (pk_value,))
+                self.deleted.remove(obj)
+
+        def commit(self):
+            self.flush()
+            self.engine.commit()
+
+        def update(self, obj, **kwargs):
+            for k, v in kwargs.items():
+                setattr(obj, k, v)
+            self.dirty.add(obj)
+
+        def delete(self, obj):
+            self.deleted.add(obj)
+
+        def query(self, model):
+            return Query(model, self)
+
+        def close(self):
+            self.engine.close()
+
     class Query:
-        def __init__(self, model):
+        def __init__(self, model, session):
             self.model = model
             self._filter = {}
+            self.session = session
 
         def filter_by(self, **kwargs):
             self._filter = kwargs
@@ -95,11 +180,10 @@ def sessionmaker(bind=None):
                     conditions.append(f"{k}=?")
                     params.append(v)
                 sql += " WHERE " + " AND ".join(conditions)
-            cursor = Session.engine.execute(sql, params)
+            cursor = self.session.engine.execute(sql, params)
             rows = cursor.fetchall()
             results = []
             for row in rows:
-                # Map row to model instance
                 obj = self.model()
                 for idx, col in enumerate(cursor.description):
                     setattr(obj, col[0], row[idx])
@@ -120,58 +204,24 @@ def sessionmaker(bind=None):
                     conditions.append(f"{k}=?")
                     params.append(v)
                 sql += " WHERE " + " AND ".join(conditions)
-            Session.engine.execute(sql, params)
+            self.session.engine.execute(sql, params)
 
-    class Session:
-        engine = bind
-        objs = []
-
-        def add(self, obj):
-            self.objs.append(obj)
-
-        def add_all(self, objs):
-            self.objs.extend(objs)
-
-        def flush(self):
-            # Insert all objects in self.objs into the database
-            for obj in self.objs:
-                table = obj.__tablename__
-                fields = []
-                values = []
-                placeholders = []
-                for attr, value in obj.__dict__.items():
-                    if not attr.startswith('_'):
-                        fields.append(attr)
-                        values.append(value)
-                        placeholders.append('?')
-                sql = f"INSERT INTO {table} ({', '.join(fields)}) VALUES ({', '.join(placeholders)})"
-                self.engine.execute(sql, values)
-            self.objs.clear()
-
-        def commit(self):
-            if self.objs:
-                self.flush()
-            self.engine.commit()
-
-        def close(self):
-            self.engine.close()
-
-        def query(self, model):
-            return Query(model)
-
-        def delete(self, obj):
-            table = obj.__tablename__
-            # Assume primary key is named 'id' or find the primary key
-            pk_name = None
-            for attr, value in obj.__class__.__dict__.items():
-                if isinstance(value, Column) and value.primary_key:
-                    pk_name = attr
-                    break
-            if pk_name is None:
-                raise ValueError("No primary key defined for object")
-            pk_value = getattr(obj, pk_name)
-            sql = f"DELETE FROM {table} WHERE {pk_name}=?"
-            self.engine.execute(sql, (pk_value,))
+        def update(self, **kwargs):
+            table = getattr(self.model, '__tablename__', self.model.__name__.lower())
+            set_clauses = []
+            set_values = []
+            for k, v in kwargs.items():
+                set_clauses.append(f"{k}=?")
+                set_values.append(v)
+            sql = f"UPDATE {table} SET {', '.join(set_clauses)}"
+            params = list(set_values)
+            if self._filter:
+                conditions = []
+                for k, v in self._filter.items():
+                    conditions.append(f"{k}=?")
+                    params.append(v)
+                sql += " WHERE " + " AND ".join(conditions)
+            self.session.engine.execute(sql, params)
 
     return Session
 
@@ -210,6 +260,14 @@ for user in users:
 
 # Query a specific user
 user = session.query(User).filter_by(name='Alice').first()
+print(f"  {user}")
+
+# Update a user
+session.query(User).filter_by(name='Alice').update(name='Alicia')
+session.commit()
+
+# Query the updated user
+user = session.query(User).filter_by(name='Alicia').first()
 print(f"  {user}")
 
 # Delete a user
