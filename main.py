@@ -85,7 +85,18 @@ def sessionmaker(bind=None):
             self.deleted = set()
 
         def add(self, obj):
-            self.new.add(obj)
+            # Find primary key name and value
+            pk_name = None
+            for attr, value in obj.__class__.__dict__.items():
+                if isinstance(value, Column) and value.primary_key:
+                    pk_name = attr
+                    break
+            if pk_name is not None:
+                pk_value = getattr(obj, pk_name, None)
+                if pk_value not in (None, 0, '', False):
+                    self.dirty.add(obj)  # Mark for update
+                    return
+            self.new.add(obj)  # Mark for insert
 
         def add_all(self, objs):
             for obj in objs:
@@ -269,6 +280,16 @@ session.commit()
 # Query the updated user
 user = session.query(User).filter_by(name='Alicia').first()
 print(f"  {user}")
+
+# Update the user using the model instance
+user.age = 31
+session.add(user)
+session.commit()
+
+# Query all users after update
+users = session.query(User).all()
+for user in users:
+    print(f"  {user}")
 
 # Delete a user
 session.query(User).filter_by(name='Bob').delete()
