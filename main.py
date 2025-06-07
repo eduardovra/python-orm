@@ -13,10 +13,16 @@ class Column:
         self.name = name
 
     def __get__(self, obj, type=None) -> object:
-        return obj.__dict__.get(self.name) or 0
+        if obj is None:
+            return self  # Accessed from class, return the descriptor itself
+        return obj.__dict__.get(self.name, None)
 
     def __set__(self, obj, value) -> None:
         obj.__dict__[self.name] = value
+
+    def __eq__(self, other):
+        # Return a tuple representing the comparison
+        return (self.name, "=", other)
 
 class Field:
     pass
@@ -175,10 +181,16 @@ def sessionmaker(bind=None):
         def __init__(self, model, session):
             self.model = model
             self._filter = {}
+            self._filter_expr = None
             self.session = session
 
         def filter_by(self, **kwargs):
             self._filter = kwargs
+            return self
+
+        def filter(self, expr):
+            # expr is a tuple like ('name', '=', 'Alice')
+            self._filter_expr = expr
             return self
 
         def all(self):
@@ -191,6 +203,10 @@ def sessionmaker(bind=None):
                     conditions.append(f"{k}=?")
                     params.append(v)
                 sql += " WHERE " + " AND ".join(conditions)
+            elif self._filter_expr:
+                col, op, val = self._filter_expr
+                sql += f" WHERE {col} {op} ?"
+                params.append(val)
             cursor = self.session.engine.execute(sql, params)
             rows = cursor.fetchall()
             results = []
@@ -215,6 +231,10 @@ def sessionmaker(bind=None):
                     conditions.append(f"{k}=?")
                     params.append(v)
                 sql += " WHERE " + " AND ".join(conditions)
+            elif self._filter_expr:
+                col, op, val = self._filter_expr
+                sql += f" WHERE {col} {op} ?"
+                params.append(val)
             self.session.engine.execute(sql, params)
 
         def update(self, **kwargs):
@@ -232,6 +252,10 @@ def sessionmaker(bind=None):
                     conditions.append(f"{k}=?")
                     params.append(v)
                 sql += " WHERE " + " AND ".join(conditions)
+            elif self._filter_expr:
+                col, op, val = self._filter_expr
+                sql += f" WHERE {col} {op} ?"
+                params.append(val)
             self.session.engine.execute(sql, params)
 
     return Session
@@ -271,6 +295,10 @@ for user in users:
 
 # Query a specific user
 user = session.query(User).filter_by(name='Alice').first()
+print(f"  {user}")
+
+# Query using model attribute
+user = session.query(User).filter(User.name == 'Alice').first()
 print(f"  {user}")
 
 # Update a user
