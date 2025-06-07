@@ -110,6 +110,18 @@ def sessionmaker(bind=None):
             results = self.all()
             return results[0] if results else None
 
+        def delete(self):
+            table = getattr(self.model, '__tablename__', self.model.__name__.lower())
+            sql = f"DELETE FROM {table}"
+            params = []
+            if self._filter:
+                conditions = []
+                for k, v in self._filter.items():
+                    conditions.append(f"{k}=?")
+                    params.append(v)
+                sql += " WHERE " + " AND ".join(conditions)
+            Session.engine.execute(sql, params)
+
     class Session:
         engine = bind
         objs = []
@@ -146,6 +158,20 @@ def sessionmaker(bind=None):
 
         def query(self, model):
             return Query(model)
+
+        def delete(self, obj):
+            table = obj.__tablename__
+            # Assume primary key is named 'id' or find the primary key
+            pk_name = None
+            for attr, value in obj.__class__.__dict__.items():
+                if isinstance(value, Column) and value.primary_key:
+                    pk_name = attr
+                    break
+            if pk_name is None:
+                raise ValueError("No primary key defined for object")
+            pk_value = getattr(obj, pk_name)
+            sql = f"DELETE FROM {table} WHERE {pk_name}=?"
+            self.engine.execute(sql, (pk_value,))
 
     return Session
 
@@ -185,6 +211,15 @@ for user in users:
 # Query a specific user
 user = session.query(User).filter_by(name='Alice').first()
 print(f"  {user}")
+
+# Delete a user
+session.query(User).filter_by(name='Bob').delete()
+session.commit()
+
+# Query all users after deletion
+users = session.query(User).all()
+for user in users:
+    print(f"  {user}")
 
 # Close the session
 session.close()
