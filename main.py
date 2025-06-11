@@ -193,31 +193,36 @@ def sessionmaker(bind=None):
             self.model = model
             self.session = session
             self._filter = {}
-            self._filter_expr = None
+            self._filter_exprs = []
 
         def filter_by(self, **kwargs):
-            self._filter = kwargs
-            return self
+            query = self
 
-        def filter(self, expr):
-            # expr is a tuple like ('name', '=', 'Alice')
-            self._filter_expr = expr
+            for k, v in kwargs.items():
+                column = getattr(self.model, k)
+                assert isinstance(column, Column), f"{k} is not a valid column"
+                query = query.filter(column == v)
+
+            return query
+
+        def filter(self, *exprs):
+            # Accepts multiple expressions like ('name', '=', 'Alice')
+            self._filter_exprs.extend(exprs)
             return self
 
         def all(self):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
             sql = f"SELECT * FROM {table}"
             params = []
-            if self._filter:
-                conditions = []
-                for k, v in self._filter.items():
-                    conditions.append(f"{k}=?")
-                    params.append(v)
-                sql += " WHERE " + " AND ".join(conditions)
-            elif self._filter_expr:
-                col, op, val = self._filter_expr
-                sql += f" WHERE {col} {op} ?"
+
+            conditions = []
+            for expr in self._filter_exprs:
+                col, op, val = expr
+                conditions.append(f"{col} {op} ?")
                 params.append(val)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
             cursor = self.session.engine.execute(sql, params)
             rows = cursor.fetchall()
             results = []
@@ -226,6 +231,7 @@ def sessionmaker(bind=None):
                 for idx, col in enumerate(cursor.description):
                     setattr(obj, col[0], row[idx])
                 results.append(obj)
+
             return results
 
         def first(self):
@@ -237,16 +243,15 @@ def sessionmaker(bind=None):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
             sql = f"DELETE FROM {table}"
             params = []
-            if self._filter:
-                conditions = []
-                for k, v in self._filter.items():
-                    conditions.append(f"{k}=?")
-                    params.append(v)
-                sql += " WHERE " + " AND ".join(conditions)
-            elif self._filter_expr:
-                col, op, val = self._filter_expr
-                sql += f" WHERE {col} {op} ?"
+
+            conditions = []
+            for expr in self._filter_exprs:
+                col, op, val = expr
+                conditions.append(f"{col} {op} ?")
                 params.append(val)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
             self.session.engine.execute(sql, params)
 
         def update(self, **kwargs):
@@ -258,16 +263,15 @@ def sessionmaker(bind=None):
                 set_values.append(v)
             sql = f"UPDATE {table} SET {', '.join(set_clauses)}"
             params = list(set_values)
-            if self._filter:
-                conditions = []
-                for k, v in self._filter.items():
-                    conditions.append(f"{k}=?")
-                    params.append(v)
-                sql += " WHERE " + " AND ".join(conditions)
-            elif self._filter_expr:
-                col, op, val = self._filter_expr
-                sql += f" WHERE {col} {op} ?"
+
+            conditions = []
+            for expr in self._filter_exprs:
+                col, op, val = expr
+                conditions.append(f"{col} {op} ?")
                 params.append(val)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
             self.session.engine.execute(sql, params)
 
     return Session

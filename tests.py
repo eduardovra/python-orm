@@ -42,7 +42,7 @@ class TestQuery(unittest.TestCase):
         self.assertEqual(user.age, 30)
 
     def test_query_using_model_attribute(self):
-        user = self.session.query(User).filter(User.name == 'Alice').first()
+        user = self.session.query(User).filter(User.name == 'Alice', User.age == 30).first()
         self.assertIsNotNone(user)
         self.assertEqual(user.name, 'Alice')
 
