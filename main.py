@@ -229,8 +229,9 @@ def sessionmaker(bind=None):
             return results
 
         def first(self):
-            results = self.all()
-            return results[0] if results else None
+            # TODO use LIMIT 1 in SQL
+            for result in self.all():
+                return result
 
         def delete(self):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
@@ -270,78 +271,3 @@ def sessionmaker(bind=None):
             self.session.engine.execute(sql, params)
 
     return Session
-
-# Define the database connection
-engine = create_engine('sqlite://:memory:') # In memory database
-engine.set_trace_callback(print)
-
-# Create a base class for declarative models
-Base = declarative_base()
-
-# Define the User model
-class User(Base):
-    __tablename__ = 'users'
-
-    id = Column(Integer, primary_key=True)
-    name = Column(String)
-    age = Column(Integer)
-
-# Create the database tables
-Base.metadata.create_all(engine)
-
-# Create a session to interact with the database
-Session = sessionmaker(bind=engine)
-session = Session()
-
-# Add some users
-user1 = User(name='Alice', age=30)
-user2 = User(name='Bob', age=25)
-session.add_all([user1, user2])
-session.commit()
-
-# Check PK was assigned to instances
-assert user1.id, "Primary key should be assigned to user1"
-assert user2.id, "Primary key should be assigned to user2"
-
-# Query all users
-users = session.query(User).all()
-for user in users:
-    print(f"  {user}")
-
-# Query a specific user
-user = session.query(User).filter_by(name='Alice').first()
-print(f"  {user}")
-
-# Query using model attribute
-user = session.query(User).filter(User.name == 'Alice').first()
-print(f"  {user}")
-
-# Update a user
-session.query(User).filter_by(name='Alice').update(name='Alicia')
-session.commit()
-
-# Query the updated user
-user = session.query(User).filter_by(name='Alicia').first()
-print(f"  {user}")
-
-# Update the user using the model instance
-user.age = 31
-session.add(user)
-session.commit()
-
-# Query all users after update
-users = session.query(User).all()
-for user in users:
-    print(f"  {user}")
-
-# Delete a user
-session.query(User).filter_by(name='Bob').delete()
-session.commit()
-
-# Query all users after deletion
-users = session.query(User).all()
-for user in users:
-    print(f"  {user}")
-
-# Close the session
-session.close()
