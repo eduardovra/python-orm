@@ -14,15 +14,20 @@ class Column:
 
     def __get__(self, obj, type=None) -> object:
         if obj is None:
-            return self  # Accessed from class, return the descriptor itself
+            return self
         return obj.__dict__.get(self.name, None)
 
     def __set__(self, obj, value) -> None:
         obj.__dict__[self.name] = value
 
     def __eq__(self, other):
-        # Return a tuple representing the comparison
         return (self.name, "=", other)
+
+    def asc(self):
+        return (self.name, 'ASC')
+
+    def desc(self):
+        return (self.name, 'DESC')
 
 class Field:
     pass
@@ -216,7 +221,7 @@ def sessionmaker(bind=None):
             return self
 
         def order_by(self, *columns):
-            # Accepts columns as strings or (col, 'DESC') tuples
+            # Accepts columns, or columns with .asc()/.desc()
             self._order_by = columns
             return self
 
@@ -237,7 +242,7 @@ def sessionmaker(bind=None):
                 order_clauses = []
                 for col in self._order_by:
                     if isinstance(col, tuple):
-                        order_clauses.append(f"{col[0]} {col[1]}")
+                        order_clauses.append(" ".join(col))
                     elif isinstance(col, Column):
                         order_clauses.append(col.name)
                 sql += " ORDER BY " + ", ".join(order_clauses)

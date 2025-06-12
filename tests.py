@@ -81,6 +81,16 @@ class TestQuery(unittest.TestCase):
         self.assertIsNotNone(user)
         self.assertEqual(user.name, 'Bob')
 
+    def test_order_by_name_asc(self):
+        users = self.session.query(User).order_by(User.name.asc()).all()
+        names = [u.name for u in users]
+        self.assertEqual(names, ['Alice', 'Bob'])
+
+    def test_order_by_name_desc(self):
+        users = self.session.query(User).order_by(User.name.desc()).all()
+        names = [u.name for u in users]
+        self.assertEqual(names, ['Bob', 'Alice'])
+
 
 if __name__ == '__main__':
     unittest.main(argv=sys.argv)
