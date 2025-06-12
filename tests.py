@@ -91,6 +91,29 @@ class TestQuery(unittest.TestCase):
         names = [u.name for u in users]
         self.assertEqual(names, ['Bob', 'Alice'])
 
+    def test_group_by_age(self):
+        # Add another user with the same age as Bob
+        user3 = User(name='Charlie', age=25)
+        self.session.add(user3)
+        self.session.commit()
+        # Group by age and count users per age
+        sql = "SELECT age, COUNT(*) as count FROM users GROUP BY age"
+        cursor = self.session.engine.execute(sql)
+        results = cursor.fetchall()
+        age_counts = {row[0]: row[1] for row in results}
+        self.assertEqual(age_counts[25], 2)
+        self.assertEqual(age_counts[30], 1)
+
+    def test_group_by_query_api(self):
+        # Add another user with the same age as Bob
+        user3 = User(name='Charlie', age=25)
+        self.session.add(user3)
+        self.session.commit()
+        # Use the ORM's group_by API
+        results = self.session.query(User).group_by(User.age).all()
+        ages = sorted([u.age for u in results])
+        self.assertEqual(ages, [25, 30])
+
 
 if __name__ == '__main__':
     unittest.main(argv=sys.argv)

@@ -201,6 +201,7 @@ def sessionmaker(bind=None):
             self._filter_exprs = []
             self._limit = None
             self._order_by = None
+            self._group_by = None
 
         def filter_by(self, **kwargs):
             query = self
@@ -225,6 +226,10 @@ def sessionmaker(bind=None):
             self._order_by = columns
             return self
 
+        def group_by(self, *columns):
+            self._group_by = columns
+            return self
+
         def _build_where_clause(self):
             conditions = []
             params = []
@@ -235,6 +240,15 @@ def sessionmaker(bind=None):
             if conditions:
                 return " WHERE " + " AND ".join(conditions), params
             return "", []
+
+        def _build_group_by_clause(self):
+            if self._group_by:
+                group_clauses = []
+                for col in self._group_by:
+                    assert isinstance(col, Column)
+                    group_clauses.append(col.name)
+                return " GROUP BY " + ", ".join(group_clauses)
+            return ""
 
         def _build_order_by_clause(self):
             if self._order_by:
@@ -254,9 +268,10 @@ def sessionmaker(bind=None):
 
         def _build_sql_clauses(self):
             where_clause, params = self._build_where_clause()
+            group_by_clause = self._build_group_by_clause()  # Add this line
             order_by_clause = self._build_order_by_clause()
             limit_clause = self._build_limit_clause()
-            sql = where_clause + order_by_clause + limit_clause
+            sql = where_clause + group_by_clause + order_by_clause + limit_clause  # Update this line
             return sql, params
 
         def first(self):
