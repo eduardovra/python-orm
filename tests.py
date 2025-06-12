@@ -114,6 +114,37 @@ class TestQuery(unittest.TestCase):
         ages = sorted([u.age for u in results])
         self.assertEqual(ages, [25, 30])
 
+    def test_filter_eq(self):
+        user = self.session.query(User).filter(User.name == 'Alice').first()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.name, 'Alice')
+
+    def test_filter_ne(self):
+        users = self.session.query(User).filter(User.name != 'Alice').all()
+        names = [u.name for u in users]
+        self.assertIn('Bob', names)
+        self.assertNotIn('Alice', names)
+
+    def test_filter_lt(self):
+        users = self.session.query(User).filter(User.age < 30).all()
+        names = [u.name for u in users]
+        self.assertEqual(names, ['Bob'])
+
+    def test_filter_le(self):
+        users = self.session.query(User).filter(User.age <= 25).all()
+        names = [u.name for u in users]
+        self.assertEqual(names, ['Bob'])
+
+    def test_filter_gt(self):
+        users = self.session.query(User).filter(User.age > 25).all()
+        names = [u.name for u in users]
+        self.assertEqual(names, ['Alice'])
+
+    def test_filter_ge(self):
+        users = self.session.query(User).filter(User.age >= 30).all()
+        names = [u.name for u in users]
+        self.assertEqual(names, ['Alice'])
+
 
 if __name__ == '__main__':
     unittest.main(argv=sys.argv)

@@ -23,6 +23,21 @@ class Column:
     def __eq__(self, other):
         return (self.name, "=", other)
 
+    def __ne__(self, other):
+        return (self.name, "<>", other)
+
+    def __lt__(self, other):
+        return (self.name, "<", other)
+
+    def __le__(self, other):
+        return (self.name, "<=", other)
+
+    def __gt__(self, other):
+        return (self.name, ">", other)
+
+    def __ge__(self, other):
+        return (self.name, ">=", other)
+
     def asc(self):
         return (self.name, 'ASC')
 
@@ -268,10 +283,10 @@ def sessionmaker(bind=None):
 
         def _build_sql_clauses(self):
             where_clause, params = self._build_where_clause()
-            group_by_clause = self._build_group_by_clause()  # Add this line
+            group_by_clause = self._build_group_by_clause()
             order_by_clause = self._build_order_by_clause()
             limit_clause = self._build_limit_clause()
-            sql = where_clause + group_by_clause + order_by_clause + limit_clause  # Update this line
+            sql = where_clause + group_by_clause + order_by_clause + limit_clause
             return sql, params
 
         def first(self):
