@@ -83,9 +83,9 @@ def sessionmaker(bind=None):
     # This function would normally return a session class bound to the engine
 
     class Session:
-        engine = bind
-
         def __init__(self):
+            assert bind is not None, "Session must be bound to an engine"
+            self.engine = bind
             self.new = set()
             self.dirty = set()
             self.deleted = set()
@@ -98,7 +98,7 @@ def sessionmaker(bind=None):
                     pk_name = attr
                     break
             if pk_name is not None:
-                pk_value = getattr(obj, pk_name, None)
+                pk_value = getattr(obj, pk_name)
                 if pk_value not in (None, 0, '', False):
                     self.dirty.add(obj)  # Mark for update
                     return
@@ -194,6 +194,8 @@ def sessionmaker(bind=None):
             self.session = session
             self._filter = {}
             self._filter_exprs = []
+            self._limit = None
+            self._order_by = None
 
         def filter_by(self, **kwargs):
             query = self
@@ -206,8 +208,16 @@ def sessionmaker(bind=None):
             return query
 
         def filter(self, *exprs):
-            # Accepts multiple expressions like ('name', '=', 'Alice')
             self._filter_exprs.extend(exprs)
+            return self
+
+        def limit(self, n):
+            self._limit = n
+            return self
+
+        def order_by(self, *columns):
+            # Accepts columns as strings or (col, 'DESC') tuples
+            self._order_by = columns
             return self
 
         def all(self):
@@ -223,6 +233,18 @@ def sessionmaker(bind=None):
             if conditions:
                 sql += " WHERE " + " AND ".join(conditions)
 
+            if self._order_by:
+                order_clauses = []
+                for col in self._order_by:
+                    if isinstance(col, tuple):
+                        order_clauses.append(f"{col[0]} {col[1]}")
+                    elif isinstance(col, Column):
+                        order_clauses.append(col.name)
+                sql += " ORDER BY " + ", ".join(order_clauses)
+
+            if self._limit is not None:
+                sql += f" LIMIT {self._limit}"
+
             cursor = self.session.engine.execute(sql, params)
             rows = cursor.fetchall()
             results = []
@@ -235,9 +257,12 @@ def sessionmaker(bind=None):
             return results
 
         def first(self):
-            # TODO use LIMIT 1 in SQL
-            for result in self.all():
+            for result in self.limit(1).all():
                 return result
+
+        def last(self):
+            if results := self.all():
+                return results[-1]
 
         def delete(self):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
@@ -251,6 +276,18 @@ def sessionmaker(bind=None):
                 params.append(val)
             if conditions:
                 sql += " WHERE " + " AND ".join(conditions)
+
+            if self._order_by:
+                order_clauses = []
+                for col in self._order_by:
+                    if isinstance(col, tuple):
+                        order_clauses.append(f"{col[0]} {col[1]}")
+                    else:
+                        order_clauses.append(str(col))
+                sql += " ORDER BY " + ", ".join(order_clauses)
+
+            if self._limit is not None:
+                sql += f" LIMIT {self._limit}"
 
             self.session.engine.execute(sql, params)
 
@@ -271,6 +308,18 @@ def sessionmaker(bind=None):
                 params.append(val)
             if conditions:
                 sql += " WHERE " + " AND ".join(conditions)
+
+            if self._order_by:
+                order_clauses = []
+                for col in self._order_by:
+                    if isinstance(col, tuple):
+                        order_clauses.append(f"{col[0]} {col[1]}")
+                    else:
+                        order_clauses.append(str(col))
+                sql += " ORDER BY " + ", ".join(order_clauses)
+
+            if self._limit is not None:
+                sql += f" LIMIT {self._limit}"
 
             self.session.engine.execute(sql, params)
 

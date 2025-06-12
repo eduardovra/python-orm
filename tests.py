@@ -1,4 +1,6 @@
 import unittest
+import sys
+
 from main import create_engine, declarative_base, sessionmaker, Column, Integer, String
 
 
@@ -69,6 +71,16 @@ class TestQuery(unittest.TestCase):
         self.assertNotIn('Bob', names)
         self.assertIn('Alice', names)
 
+    def test_query_first_user(self):
+        user = self.session.query(User).order_by(User.name).first()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.name, 'Alice')
+
+    def test_query_last_user(self):
+        user = self.session.query(User).order_by(User.name).last()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.name, 'Bob')
+
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(argv=sys.argv)
