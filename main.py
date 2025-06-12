@@ -225,41 +225,39 @@ def sessionmaker(bind=None):
             self._order_by = columns
             return self
 
-        def all(self):
-            table = getattr(self.model, '__tablename__', self.model.__name__.lower())
-            sql = f"SELECT * FROM {table}"
-            params = []
-
+        def _build_where_clause(self):
             conditions = []
+            params = []
             for expr in self._filter_exprs:
                 col, op, val = expr
                 conditions.append(f"{col} {op} ?")
                 params.append(val)
             if conditions:
-                sql += " WHERE " + " AND ".join(conditions)
+                return " WHERE " + " AND ".join(conditions), params
+            return "", []
 
+        def _build_order_by_clause(self):
             if self._order_by:
                 order_clauses = []
                 for col in self._order_by:
                     if isinstance(col, tuple):
-                        order_clauses.append(" ".join(col))
+                        order_clauses.append(f"{col[0]} {col[1]}")
                     elif isinstance(col, Column):
                         order_clauses.append(col.name)
-                sql += " ORDER BY " + ", ".join(order_clauses)
+                return " ORDER BY " + ", ".join(order_clauses)
+            return ""
 
+        def _build_limit_clause(self):
             if self._limit is not None:
-                sql += f" LIMIT {self._limit}"
+                return f" LIMIT {self._limit}"
+            return ""
 
-            cursor = self.session.engine.execute(sql, params)
-            rows = cursor.fetchall()
-            results = []
-            for row in rows:
-                obj = self.model()
-                for idx, col in enumerate(cursor.description):
-                    setattr(obj, col[0], row[idx])
-                results.append(obj)
-
-            return results
+        def _build_sql_clauses(self):
+            where_clause, params = self._build_where_clause()
+            order_by_clause = self._build_order_by_clause()
+            limit_clause = self._build_limit_clause()
+            sql = where_clause + order_by_clause + limit_clause
+            return sql, params
 
         def first(self):
             for result in self.limit(1).all():
@@ -269,32 +267,21 @@ def sessionmaker(bind=None):
             if results := self.all():
                 return results[-1]
 
-        def delete(self):
+        def all(self):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
-            sql = f"DELETE FROM {table}"
-            params = []
+            sql = f"SELECT * FROM {table}"
+            clause, params = self._build_sql_clauses()
+            sql += clause
 
-            conditions = []
-            for expr in self._filter_exprs:
-                col, op, val = expr
-                conditions.append(f"{col} {op} ?")
-                params.append(val)
-            if conditions:
-                sql += " WHERE " + " AND ".join(conditions)
-
-            if self._order_by:
-                order_clauses = []
-                for col in self._order_by:
-                    if isinstance(col, tuple):
-                        order_clauses.append(f"{col[0]} {col[1]}")
-                    else:
-                        order_clauses.append(str(col))
-                sql += " ORDER BY " + ", ".join(order_clauses)
-
-            if self._limit is not None:
-                sql += f" LIMIT {self._limit}"
-
-            self.session.engine.execute(sql, params)
+            cursor = self.session.engine.execute(sql, params)
+            rows = cursor.fetchall()
+            results = []
+            for row in rows:
+                obj = self.model()
+                for idx, col in enumerate(cursor.description):
+                    setattr(obj, col[0], row[idx])
+                results.append(obj)
+            return results
 
         def update(self, **kwargs):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
@@ -304,28 +291,16 @@ def sessionmaker(bind=None):
                 set_clauses.append(f"{k}=?")
                 set_values.append(v)
             sql = f"UPDATE {table} SET {', '.join(set_clauses)}"
-            params = list(set_values)
+            clause, params = self._build_sql_clauses()
+            sql += clause
+            all_params = set_values + params
+            self.session.engine.execute(sql, all_params)
 
-            conditions = []
-            for expr in self._filter_exprs:
-                col, op, val = expr
-                conditions.append(f"{col} {op} ?")
-                params.append(val)
-            if conditions:
-                sql += " WHERE " + " AND ".join(conditions)
-
-            if self._order_by:
-                order_clauses = []
-                for col in self._order_by:
-                    if isinstance(col, tuple):
-                        order_clauses.append(f"{col[0]} {col[1]}")
-                    else:
-                        order_clauses.append(str(col))
-                sql += " ORDER BY " + ", ".join(order_clauses)
-
-            if self._limit is not None:
-                sql += f" LIMIT {self._limit}"
-
+        def delete(self):
+            table = getattr(self.model, '__tablename__', self.model.__name__.lower())
+            sql = f"DELETE FROM {table}"
+            clause, params = self._build_sql_clauses()
+            sql += clause
             self.session.engine.execute(sql, params)
 
     return Session
