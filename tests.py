@@ -1,7 +1,11 @@
 import unittest
 import sys
 
-from main import create_engine, declarative_base, sessionmaker, Column, Integer, String
+from main import (
+    create_engine, declarative_base, sessionmaker, Column,
+    Integer, String, Boolean, Date, DateTime, Text,
+)
+import datetime
 
 
 Base = declarative_base()
@@ -11,6 +15,10 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     age = Column(Integer)
+    is_active = Column(Boolean)
+    bio = Column(Text)
+    birthday = Column(Date)
+    created_at = Column(DateTime)
 
 
 class TestQuery(unittest.TestCase):
@@ -144,6 +152,88 @@ class TestQuery(unittest.TestCase):
         users = self.session.query(User).filter(User.age >= 30).all()
         names = [u.name for u in users]
         self.assertEqual(names, ['Alice'])
+
+    def test_integer_column(self):
+        user = self.session.query(User).filter_by(name='Alice').first()
+        user.age = 42
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.age, 42)
+        user.age = 27
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.age, 27)
+
+    def test_string_column(self):
+        user = self.session.query(User).filter_by(name='Alice').first()
+        user.name = "Alicia"
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alicia').first()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.name, "Alicia")
+        user.name = "Alice"
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertIsNotNone(user)
+        self.assertEqual(user.name, "Alice")
+
+    def test_boolean_column(self):
+        user = self.session.query(User).filter_by(name='Alice').first()
+        user.is_active = True
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertTrue(user.is_active)
+        user.is_active = False
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertFalse(user.is_active)
+
+    def test_text_column(self):
+        user = self.session.query(User).filter_by(name='Alice').first()
+        user.bio = "Hello world!"
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.bio, "Hello world!")
+        user.bio = "Updated bio"
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.bio, "Updated bio")
+
+    def test_date_column(self):
+        user = self.session.query(User).filter_by(name='Alice').first()
+        user.birthday = datetime.date(2000, 1, 1)
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.birthday, datetime.date(2000, 1, 1))
+        user.birthday = datetime.date(1999, 12, 31)
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.birthday, datetime.date(1999, 12, 31))
+
+    def test_datetime_column(self):
+        user = self.session.query(User).filter_by(name='Alice').first()
+        dt = datetime.datetime(2023, 1, 1, 12, 0, 0)
+        user.created_at = dt
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.created_at, dt)
+        new_dt = datetime.datetime(2024, 6, 11, 8, 30, 0)
+        user.created_at = new_dt
+        self.session.add(user)
+        self.session.commit()
+        user = self.session.query(User).filter_by(name='Alice').first()
+        self.assertEqual(user.created_at, new_dt)
 
 
 if __name__ == '__main__':

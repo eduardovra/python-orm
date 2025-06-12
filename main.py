@@ -1,4 +1,5 @@
 import sqlite3
+import datetime
 
 # from sqlalchemy import create_engine, Column, Integer, String
 # from sqlalchemy.orm import sessionmaker
@@ -15,9 +16,26 @@ class Column:
     def __get__(self, obj, type=None) -> object:
         if obj is None:
             return self
-        return obj.__dict__.get(self.name, None)
+        value = obj.__dict__.get(self.name, None)
+        # Type conversion for Date, DateTime, Boolean
+        if isinstance(self.type_, type) and value is not None:
+            if self.type_ is Date and isinstance(value, str):
+                return datetime.date.fromisoformat(value)
+            if self.type_ is DateTime and isinstance(value, str):
+                return datetime.datetime.fromisoformat(value)
+            if self.type_ is Boolean and isinstance(value, int):
+                return bool(value)
+        return value
 
     def __set__(self, obj, value) -> None:
+        # Type conversion for Date, DateTime, Boolean
+        if isinstance(self.type_, type):
+            if self.type_ is Date and isinstance(value, datetime.date):
+                value = value.isoformat()
+            if self.type_ is DateTime and isinstance(value, datetime.datetime):
+                value = value.isoformat(sep=' ')
+            if self.type_ is Boolean and isinstance(value, bool):
+                value = int(value)
         obj.__dict__[self.name] = value
 
     def __eq__(self, other):
@@ -53,6 +71,18 @@ class Integer(Field):
 class String(Field):
     pass
 
+class Text(Field):
+    pass
+
+class Boolean(Field):
+    pass
+
+class Date(Field):
+    pass
+
+class DateTime(Field):
+    pass
+
 def create_engine(connection_string: str):
     # This function would normally create a database engine
     if connection_string.startswith('sqlite://'):
@@ -77,6 +107,14 @@ def declarative_base():
                             sql_type = "INTEGER"
                         elif col_type is String:
                             sql_type = "VARCHAR"
+                        elif col_type is Text:
+                            sql_type = "TEXT"
+                        elif col_type is Boolean:
+                            sql_type = "BOOLEAN"
+                        elif col_type is Date:
+                            sql_type = "DATE"
+                        elif col_type is DateTime:
+                            sql_type = "DATETIME"
                         else:
                             raise NotImplementedError(f"Unsupported column type: {col_type}")
                         col_def = f"{attr} {sql_type}"
@@ -137,6 +175,16 @@ def sessionmaker(bind=None):
                 placeholders = []
                 for attr, value in obj.__dict__.items():
                     if not attr.startswith('_'):
+                        # Convert types for Date, DateTime, Boolean
+                        col = getattr(obj.__class__, attr, None)
+                        if isinstance(col, Column):
+                            if isinstance(col.type_, type):
+                                if col.type_ is Date and isinstance(value, datetime.date):
+                                    value = value.isoformat()
+                                if col.type_ is DateTime and isinstance(value, datetime.datetime):
+                                    value = value.isoformat(sep=' ')
+                                if col.type_ is Boolean and isinstance(value, bool):
+                                    value = int(value)
                         fields.append(attr)
                         values.append(value)
                         placeholders.append('?')
@@ -169,6 +217,16 @@ def sessionmaker(bind=None):
                 values = []
                 for attr, value in obj.__dict__.items():
                     if not attr.startswith('_') and attr != pk_name:
+                        # Convert types for Date, DateTime, Boolean
+                        col = getattr(obj.__class__, attr, None)
+                        if isinstance(col, Column):
+                            if isinstance(col.type_, type):
+                                if col.type_ is Date and isinstance(value, datetime.date):
+                                    value = value.isoformat()
+                                if col.type_ is DateTime and isinstance(value, datetime.datetime):
+                                    value = value.isoformat(sep=' ')
+                                if col.type_ is Boolean and isinstance(value, bool):
+                                    value = int(value)
                         fields.append(f"{attr}=?")
                         values.append(value)
                 sql = f"UPDATE {table} SET {', '.join(fields)} WHERE {pk_name}=?"
@@ -309,7 +367,18 @@ def sessionmaker(bind=None):
             for row in rows:
                 obj = self.model()
                 for idx, col in enumerate(cursor.description):
-                    setattr(obj, col[0], row[idx])
+                    col_name = col[0]
+                    value = row[idx]
+                    column = getattr(self.model, col_name, None)
+                    if isinstance(column, Column):
+                        if isinstance(column.type_, type):
+                            if column.type_ is Date and isinstance(value, str):
+                                value = datetime.date.fromisoformat(value)
+                            if column.type_ is DateTime and isinstance(value, str):
+                                value = datetime.datetime.fromisoformat(value)
+                            if column.type_ is Boolean and isinstance(value, int):
+                                value = bool(value)
+                    obj.__dict__[col_name] = value
                 results.append(obj)
             return results
 
@@ -318,6 +387,16 @@ def sessionmaker(bind=None):
             set_clauses = []
             set_values = []
             for k, v in kwargs.items():
+                # Convert types for Date, DateTime, Boolean
+                column = getattr(self.model, k, None)
+                if isinstance(column, Column):
+                    if isinstance(column.type_, type):
+                        if column.type_ is Date and isinstance(v, datetime.date):
+                            v = v.isoformat()
+                        if column.type_ is DateTime and isinstance(v, datetime.datetime):
+                            v = v.isoformat(sep=' ')
+                        if column.type_ is Boolean and isinstance(v, bool):
+                            v = int(v)
                 set_clauses.append(f"{k}=?")
                 set_values.append(v)
             sql = f"UPDATE {table} SET {', '.join(set_clauses)}"
