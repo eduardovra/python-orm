@@ -1,9 +1,54 @@
 import sqlite3
 import datetime
 
-# from sqlalchemy import create_engine, Column, Integer, String
-# from sqlalchemy.orm import sessionmaker
-# from sqlalchemy.ext.declarative import declarative_base
+class Field:
+    def to_python(self, value):
+        return value
+
+    def to_db(self, value):
+        return value
+
+class Integer(Field):
+    pass
+
+class String(Field):
+    pass
+
+class Text(Field):
+    pass
+
+class Boolean(Field):
+    def to_python(self, value):
+        if isinstance(value, int):
+            return bool(value)
+        return value
+
+    def to_db(self, value):
+        if isinstance(value, bool):
+            return int(value)
+        return value
+
+class Date(Field):
+    def to_python(self, value):
+        if isinstance(value, str):
+            return datetime.date.fromisoformat(value)
+        return value
+
+    def to_db(self, value):
+        if isinstance(value, datetime.date):
+            return value.isoformat()
+        return value
+
+class DateTime(Field):
+    def to_python(self, value):
+        if isinstance(value, str):
+            return datetime.datetime.fromisoformat(value)
+        return value
+
+    def to_db(self, value):
+        if isinstance(value, datetime.datetime):
+            return value.isoformat(sep=' ')
+        return value
 
 class Column:
     def __init__(self, type_, primary_key=False):
@@ -17,25 +62,19 @@ class Column:
         if obj is None:
             return self
         value = obj.__dict__.get(self.name, None)
-        # Type conversion for Date, DateTime, Boolean
-        if isinstance(self.type_, type) and value is not None:
-            if self.type_ is Date and isinstance(value, str):
-                return datetime.date.fromisoformat(value)
-            if self.type_ is DateTime and isinstance(value, str):
-                return datetime.datetime.fromisoformat(value)
-            if self.type_ is Boolean and isinstance(value, int):
-                return bool(value)
+        # Use Field's to_python
+        if isinstance(self.type_, Field):
+            return self.type_.to_python(value)
+        elif isinstance(self.type_, type) and issubclass(self.type_, Field):
+            return self.type_().to_python(value)
         return value
 
     def __set__(self, obj, value) -> None:
-        # Type conversion for Date, DateTime, Boolean
-        if isinstance(self.type_, type):
-            if self.type_ is Date and isinstance(value, datetime.date):
-                value = value.isoformat()
-            if self.type_ is DateTime and isinstance(value, datetime.datetime):
-                value = value.isoformat(sep=' ')
-            if self.type_ is Boolean and isinstance(value, bool):
-                value = int(value)
+        # Use Field's to_db
+        if isinstance(self.type_, Field):
+            value = self.type_.to_db(value)
+        elif isinstance(self.type_, type) and issubclass(self.type_, Field):
+            value = self.type_().to_db(value)
         obj.__dict__[self.name] = value
 
     def __eq__(self, other):
@@ -61,27 +100,6 @@ class Column:
 
     def desc(self):
         return (self.name, 'DESC')
-
-class Field:
-    pass
-
-class Integer(Field):
-    pass
-
-class String(Field):
-    pass
-
-class Text(Field):
-    pass
-
-class Boolean(Field):
-    pass
-
-class Date(Field):
-    pass
-
-class DateTime(Field):
-    pass
 
 def create_engine(connection_string: str):
     # This function would normally create a database engine
@@ -176,15 +194,12 @@ def sessionmaker(bind=None):
                 for attr, value in obj.__dict__.items():
                     if not attr.startswith('_'):
                         # Convert types for Date, DateTime, Boolean
-                        col = getattr(obj.__class__, attr, None)
+                        col = getattr(obj.__class__, attr)
                         if isinstance(col, Column):
-                            if isinstance(col.type_, type):
-                                if col.type_ is Date and isinstance(value, datetime.date):
-                                    value = value.isoformat()
-                                if col.type_ is DateTime and isinstance(value, datetime.datetime):
-                                    value = value.isoformat(sep=' ')
-                                if col.type_ is Boolean and isinstance(value, bool):
-                                    value = int(value)
+                            if isinstance(col.type_, Field):
+                                value = col.type_.to_db(value)
+                            elif isinstance(col.type_, type) and issubclass(col.type_, Field):
+                                value = col.type_().to_db(value)
                         fields.append(attr)
                         values.append(value)
                         placeholders.append('?')
@@ -221,13 +236,10 @@ def sessionmaker(bind=None):
                         # Convert types for Date, DateTime, Boolean
                         col = getattr(obj.__class__, attr, None)
                         if isinstance(col, Column):
-                            if isinstance(col.type_, type):
-                                if col.type_ is Date and isinstance(value, datetime.date):
-                                    value = value.isoformat()
-                                if col.type_ is DateTime and isinstance(value, datetime.datetime):
-                                    value = value.isoformat(sep=' ')
-                                if col.type_ is Boolean and isinstance(value, bool):
-                                    value = int(value)
+                            if isinstance(col.type_, Field):
+                                value = col.type_.to_db(value)
+                            elif isinstance(col.type_, type) and issubclass(col.type_, Field):
+                                value = col.type_().to_db(value)
                         fields.append(f"{attr}=?")
                         values.append(value)
                 sql = f"UPDATE {table} SET {', '.join(fields)} WHERE {pk_name}=?"
@@ -392,13 +404,10 @@ def sessionmaker(bind=None):
                     value = row[idx]
                     column = getattr(self.model, col_name, None)
                     if isinstance(column, Column):
-                        if isinstance(column.type_, type):
-                            if column.type_ is Date and isinstance(value, str):
-                                value = datetime.date.fromisoformat(value)
-                            if column.type_ is DateTime and isinstance(value, str):
-                                value = datetime.datetime.fromisoformat(value)
-                            if column.type_ is Boolean and isinstance(value, int):
-                                value = bool(value)
+                        if isinstance(column.type_, Field):
+                            value = column.type_.to_python(value)
+                        elif isinstance(column.type_, type) and issubclass(column.type_, Field):
+                            value = column.type_().to_python(value)
                     obj.__dict__[col_name] = value
                 results.append(obj)
 
@@ -411,13 +420,10 @@ def sessionmaker(bind=None):
             for k, v in kwargs.items():
                 column = getattr(self.model, k, None)
                 if isinstance(column, Column):
-                    if isinstance(column.type_, type):
-                        if column.type_ is Date and isinstance(v, datetime.date):
-                            v = v.isoformat()
-                        if column.type_ is DateTime and isinstance(v, datetime.datetime):
-                            v = v.isoformat(sep=' ')
-                        if column.type_ is Boolean and isinstance(v, bool):
-                            v = int(v)
+                    if isinstance(column.type_, Field):
+                        v = column.type_.to_db(v)
+                    elif isinstance(column.type_, type) and issubclass(column.type_, Field):
+                        v = column.type_().to_db(v)
                 set_clauses.append(f"{k}=?")
                 set_values.append(v)
             from_clause = self._build_from_clause()
