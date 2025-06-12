@@ -202,6 +202,7 @@ def sessionmaker(bind=None):
                     setattr(obj, pk_name, pk_value)
 
                 self.new.remove(obj)
+
             # Update dirty objects
             for obj in list(self.dirty):
                 table = obj.__tablename__
@@ -233,6 +234,7 @@ def sessionmaker(bind=None):
                 values.append(pk_value)
                 self.engine.execute(sql, values)
                 self.dirty.remove(obj)
+
             # Delete deleted objects
             for obj in list(self.deleted):
                 table = obj.__tablename__
@@ -270,11 +272,19 @@ def sessionmaker(bind=None):
         def __init__(self, model, session):
             self.model = model
             self.session = session
-            self._filter = {}
             self._filter_exprs = []
             self._limit = None
             self._order_by = None
             self._group_by = None
+            self._joins = []
+
+        def join(self, other_model, on_expr):
+            """
+            other_model: the class of the table to join
+            on_expr: a tuple (left_col, op, right_col), e.g. (User.id, '=', Post.user_id)
+            """
+            self._joins.append((other_model, on_expr))
+            return self
 
         def filter_by(self, **kwargs):
             query = self
@@ -347,6 +357,18 @@ def sessionmaker(bind=None):
             sql = where_clause + group_by_clause + order_by_clause + limit_clause
             return sql, params
 
+        def _build_from_clause(self):
+            table = getattr(self.model, '__tablename__', self.model.__name__.lower())
+            sql = f"FROM {table}"
+            for other_model, on_expr in self._joins:
+                other_table = getattr(other_model, '__tablename__', other_model.__name__.lower())
+                left, op, right = on_expr
+                left_table = table if hasattr(self.model, left) else other_table
+                right_table = other_table if left_table == table else table
+                sql += f" JOIN {other_table} ON {left_table}.{left} {op} {right_table}.{right.name}"
+
+            return sql
+
         def first(self):
             for result in self.limit(1).all():
                 return result
@@ -356,11 +378,10 @@ def sessionmaker(bind=None):
                 return results[-1]
 
         def all(self):
-            table = getattr(self.model, '__tablename__', self.model.__name__.lower())
-            sql = f"SELECT * FROM {table}"
+            from_clause = self._build_from_clause()
+            sql = f"SELECT * {from_clause}"
             clause, params = self._build_sql_clauses()
             sql += clause
-
             cursor = self.session.engine.execute(sql, params)
             rows = cursor.fetchall()
             results = []
@@ -380,6 +401,7 @@ def sessionmaker(bind=None):
                                 value = bool(value)
                     obj.__dict__[col_name] = value
                 results.append(obj)
+
             return results
 
         def update(self, **kwargs):
@@ -387,7 +409,6 @@ def sessionmaker(bind=None):
             set_clauses = []
             set_values = []
             for k, v in kwargs.items():
-                # Convert types for Date, DateTime, Boolean
                 column = getattr(self.model, k, None)
                 if isinstance(column, Column):
                     if isinstance(column.type_, type):
@@ -399,7 +420,11 @@ def sessionmaker(bind=None):
                             v = int(v)
                 set_clauses.append(f"{k}=?")
                 set_values.append(v)
+            from_clause = self._build_from_clause()
             sql = f"UPDATE {table} SET {', '.join(set_clauses)}"
+            # Note: SQLite does not support JOIN in UPDATE, but this is for generality
+            if self._joins:
+                sql += f" {from_clause[len(f'FROM {table}'):]}"  # add JOIN ... part only
             clause, params = self._build_sql_clauses()
             sql += clause
             all_params = set_values + params
@@ -407,7 +432,11 @@ def sessionmaker(bind=None):
 
         def delete(self):
             table = getattr(self.model, '__tablename__', self.model.__name__.lower())
+            from_clause = self._build_from_clause()
             sql = f"DELETE FROM {table}"
+            # Note: SQLite does not support JOIN in DELETE, but this is for generality
+            if self._joins:
+                sql += f" {from_clause[len(f'FROM {table}'):]}"  # add JOIN ... part only
             clause, params = self._build_sql_clauses()
             sql += clause
             self.session.engine.execute(sql, params)

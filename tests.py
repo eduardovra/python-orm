@@ -21,6 +21,14 @@ class User(Base):
     created_at = Column(DateTime)
 
 
+class Post(Base):
+    __tablename__ = 'posts'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer)
+    title = Column(String)
+    content = Column(Text)
+
+
 class TestQuery(unittest.TestCase):
     def setUp(self):
         # Setup in-memory DB and model
@@ -35,6 +43,13 @@ class TestQuery(unittest.TestCase):
         user1 = User(name='Alice', age=30)
         user2 = User(name='Bob', age=25)
         self.session.add_all([user1, user2])
+        self.session.commit()
+
+        # Add posts
+        post1 = Post(user_id=user1.id, title="Hello", content="First post")
+        post2 = Post(user_id=user2.id, title="Hi", content="Second post")
+        post3 = Post(user_id=user1.id, title="Another", content="Third post")
+        self.session.add_all([post1, post2, post3])
         self.session.commit()
 
     def tearDown(self):
@@ -234,6 +249,21 @@ class TestQuery(unittest.TestCase):
         self.session.commit()
         user = self.session.query(User).filter_by(name='Alice').first()
         self.assertEqual(user.created_at, new_dt)
+
+    def test_join_users_posts(self):
+        # Join User and Post, filter by User.name
+        query = self.session.query(User).join(Post, User.id == Post.user_id).filter(User.name == 'Alice')
+        users = query.all()
+        # Should return Alice for each of her posts
+        self.assertTrue(all(u.name == 'Alice' for u in users))
+        self.assertEqual(len(users), 2)  # Alice has 2 posts
+
+    def test_join_and_filter_post_title(self):
+        # Join and filter by post title
+        query = self.session.query(User).join(Post, User.id == Post.user_id).filter(Post.title == 'Hello')
+        users = query.all()
+        self.assertEqual(len(users), 1)
+        self.assertEqual(users[0].name, 'Alice')
 
 
 if __name__ == '__main__':
